@@ -1,0 +1,21 @@
+{
+  "name": "xs_exchange",
+  "version": "0.0.1",
+  "description": "For XSperimentation purposes",
+  "main": "truffle.js",
+  "directories": {
+    "test": "test"
+  },
+  "scripts": {
+    "test": "truffle test",
+    "deploy": "truffle deploy",
+    "compile": "truffle compile",
+    "install-deps": "yarn && cd frontend && yarn && cd ..",
+    "start-frontend": "cd frontend && yarn serve",
+    "start-rx": "cd rx-electron && npm start"
+  },
+  "dependencies": {
+    "lodash": "^4.17.4",
+    "truffle": "5"
+  }
+}
