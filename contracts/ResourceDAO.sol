@@ -1,64 +1,82 @@
-pragma solidity ^0.5.6;
+pragma solidity ^0.5.10;
 pragma experimental ABIEncoderV2;
 
-import "./XS.sol";
+import "./moloch/Moloch.sol";
+import "./MultiResourceToken.sol";
 
-contract ResourceDAO //is also a full `DAO' (using either Giveth or Aragon)
+contract ResourceDAO
 {
-    XS exchange;
+    enum Status {
+        Requested,
+        Claimed,
+        Completed
+    }
 
-    enum Status {Requested, Claimed, Completed}
-
-    enum Assets {Time, Energy, Transportation, Waste}
+    struct Component {
+        address adr; // Which is the address of the ResourceDAO.
+        uint256 recipeID; // Which recipe ID in the resource DAO.
+        uint256 amount; // How much of the resource.
+    }
 
     struct Recipe {
         string name;
-        address[] components;// which sub resources are needed (by address)
-        uint[] componentRecipe; //tells which specific recipe to order in the components
-        uint[] amounts; // tell how much we need (in resource units defined in the DAO )
-        uint timesrequested; // this increments every request to compute the percentage of orders w.r.t. the rest;
+        Component[] components;
+        uint256 truePrice;
+        uint256 timesrequested; // this increments every request to compute the percentage of orders w.r.t. the rest;
         //string IPFSInfo;//Resource description and parameters following DAO-wide standard decided by prosumers
     }
 
     struct Request {
         address requester;
-        uint recipeID;
-        uint[] trueprice;
-        uint amounts;
+        uint256 recipeID;
+        uint256[] trueprice;
+        uint256 amounts;
         string location; //(geohash)
         uint8 status;
-        uint creation;
+        uint256 creation;
         //string IPFSInfo;
     }
 
-    //Each dao contains information about its recipes)
-     Recipe[]  public recipes;
+    Moloch dao;
 
-    //Alternative: Agent based (every DAO IS a recipe)
-    //mapping(int=>Resource[]) components;
-    //mapping(int=>int[]) quantities;
+    MultiResourceToken token;
 
-    uint public nrecipes;
-    uint public bestrecipe; // Selected by DAO prosumer signaling
+    // Balance of resource.
+    mapping (address=>int256) private balanceOf;
 
+    // Each dao contains information about its recipes
+    Recipe[] public recipes;
+
+    uint256 public nRecipes;
+    uint256 public bestrecipe; // Selected by DAO prosumer signaling
 
     Request[] public requests;
 
-    string public label;   // the name of this resource
-    uint public id;        // unique identifier of the resource
-    uint public nrequests; // Current overall demand of resource
+    string public label; // The name of this resource
+    uint256 public id; // unique identifier of the resource
+    uint256 public nrequests; // Current overall demand of resource
 
+    event NewRequest(string label, uint256 recipeID, uint256 amount);
+    event NewRecipe(string label);
 
-    event NewRequest(string _label , uint recipeID, uint amount );
-    event NewRecipe(string _label);
-
-    constructor (string memory _label, uint _id, address _exchange) public
+    constructor(
+        address _multiToken,
+        string memory _label,
+        uint _id
+    ) 
+        public
     {
+        require(address(0) != _multiToken);
+        require(address(0) != _truePriceRegistry);
+
+        token = MultiResourceToken(_multiToken);
+
+        dao = Moloch(msg.sender);
+
         nrequests = 0;
-        nrecipes = 0;
+        nRecipes = 0;
         bestrecipe = 0;
         label = _label;
-        exchange = XS(_exchange);
         id = _id;
     }
 
@@ -74,14 +92,19 @@ contract ResourceDAO //is also a full `DAO' (using either Giveth or Aragon)
 
     // The
     // call for specific recipe
-    function requestRecipe(uint _recipeID, uint _amount, string memory _location) public
+    function requestRecipe(
+        uint256 _recipeID,
+        uint256 _amount, 
+        string memory _location
+    ) 
+        public
     {   
-        uint [] memory trueprice = getTruePrice(_recipeID); //calculate the cost per unit
+        uint256[] memory trueprice = getRecipeTruePrice(_recipeID);
         Request memory order = Request (msg.sender, _recipeID,  trueprice, _amount, _location, 0 , now);
         nrequests += _amount;
         requests.push(order);
 
-        if (nrecipes == 0 || _recipeID >= nrecipes ) return ; //Check validity of request
+        if (nRecipes == 0 || _recipeID >= nRecipes ) return ; //Check validity of request
 
         //Order component resources
         for (uint i = 0; i<recipes[_recipeID].components.length; i++)
@@ -138,10 +161,10 @@ contract ResourceDAO //is also a full `DAO' (using either Giveth or Aragon)
 
     }
 
-    function getRecipes () view public returns (string[] memory) {
-        string[] memory res = new string[](nrecipes);
+    function getRecipes() view public returns (string[] memory) {
+        string[] memory res = new string[](nRecipes);
 
-        for (uint i = 0; i < nrecipes; i++) {
+        for (uint i = 0; i < nRecipes; i++) {
             res[i] = recipes[i].name;
         }
 
@@ -150,28 +173,25 @@ contract ResourceDAO //is also a full `DAO' (using either Giveth or Aragon)
 
     // function getTruePrice(uint recipeID) view public returns (uint) {
     //     uint sum = 0;
-    //     if ( nrecipes == 0 ) return 1; // exit rule, change for different assets;
+    //     if ( nRecipes == 0 ) return 1; // exit rule, change for different assets;
     //     for (uint i = 0; i < recipes[recipeID].components.length; i++){
     //         sum+=recipes[recipeID].amounts[i]*ResourceDAO(recipes[recipeID].components[i]).getTruePrice(recipes[recipeID].componentRecipe[i]);
     //     }
     //     return sum;
     // }
 
-
-
-
-    function getTruePrice(uint recipeID) view public returns (uint[] memory) {
-       uint[] memory result = new uint[](exchange.nresources()+1); // resource 0 is deiscarded
-       if ( nrecipes == 0 )  {
-           result[id]++;
-           return result; // exit recursion on basic resources;
-       }
-        for (uint i = 0; i < recipes[recipeID].components.length; i++){
-            ResourceDAO r = ResourceDAO(recipes[recipeID].components[i]);
-            result = mulVectors(addVectors(result, r.getTruePrice(recipes[recipeID].componentRecipe[i])),recipes[recipeID].amounts[i]);
-        }
-        return result;
-    }
+    // function getTruePrice(uint recipeID) view public returns (uint[] memory) {
+    //    uint[] memory result = new uint[](exchange.nresources()+1); // resource 0 is deiscarded
+    //    if ( nRecipes == 0 )  {
+    //        result[id]++;
+    //        return result; // exit recursion on basic resources;
+    //    }
+    //     for (uint i = 0; i < recipes[recipeID].components.length; i++){
+    //         ResourceDAO r = ResourceDAO(recipes[recipeID].components[i]);
+    //         result = mulVectors(addVectors(result, r.getTruePrice(recipes[recipeID].componentRecipe[i])),recipes[recipeID].amounts[i]);
+    //     }
+    //     return result;
+    // }
 
 
      function  addVectors (uint[] memory lhs, uint[] memory rhs) pure public returns (uint[] memory)
@@ -190,14 +210,29 @@ contract ResourceDAO //is also a full `DAO' (using either Giveth or Aragon)
         return v;
     }
 
-    function addRecipe(string memory name, address[] memory components, uint[] memory componentRecipe, uint[] memory quantities) public{
-        recipes.push(Recipe(name, components, componentRecipe,quantities,0));
-        nrecipes++;
-        emit NewRecipe(name);
+    function addRecipe(
+        string memory _name,
+        Component[] memory _components
+    )
+        public 
+    {
+        uint256 tPrice = 0;
+        for (uint256 i = 0; i < _components.length; i++) {
+            ResourceDAO r = ResourceDAO(recipes[_recipeID].components[i]);
+            tPrice = tPrice + r.getRecipeTruePrice(_recipeID);
+        }
+        recipes.push(Recipe(_name, _components, tPrice, 0));
+        nRecipes++;
+        
+        emit NewRecipe(_name);
     }
 
-   function getComponents(uint recipeID) view public returns (address[] memory ){
-        return recipes[recipeID].components;
+   function getComponents(uint _recipeID) view public returns (address[] memory ){
+        return recipes[_recipeID].components;
+    }
+
+    function getRecipeTruePrice(uint256 _recipeID) public view returns(uint256) {
+        return recipes[_recipeID].truePrice;
     }
 
 

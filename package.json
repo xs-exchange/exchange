@@ -15,7 +15,12 @@
     "start-rx": "cd rx-electron && npm start"
   },
   "dependencies": {
-    "lodash": "^4.17.4",
-    "truffle": "5"
+    "lodash": "^4.17.4"
+  },
+  "devDependencies": {
+    "chai": "^4.2.0",
+    "ganache-cli": "^6.6.0",
+    "openzeppelin-test-helpers": "^0.4.2",
+    "truffle": "^5.0.33"
   }
 }

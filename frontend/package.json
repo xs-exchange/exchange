@@ -13,7 +13,7 @@
     "register-service-worker": "^1.6.2",
     "roboto-fontface": "*",
     "truffle": "^5.0.8",
-    "truffle-contract": "^4.0.9",
+    "truffle-contract": "^4.0.30",
     "vue": "^2.6.6",
     "vue-router": "^3.0.1",
     "vuetify": "^1.5.5",

@@ -1,5 +1,5 @@
-const XS = artifacts.require('XS');
+const XS = artifacts.require("XS");
 
 module.exports = function(deployer) {
-    deployer.deploy(XS)
+    deployer.deploy(XS);
 };
