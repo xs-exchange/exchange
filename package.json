@@ -15,7 +15,7 @@
     "start-rx": "cd rx-electron && npm start"
   },
   "dependencies": {
-    "lodash": "^4.17.4"
+    "lodash": "^4.17.19"
   },
   "devDependencies": {
     "chai": "^4.2.0",
